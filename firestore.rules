@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"; }
+    function isValidId(id) { return id is string && id.size() <= 128; }
+
+    // Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow create: if isSignedIn() && request.resource.data.role == "customer";
+      allow update: if isOwner(userId) && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email']));
+      allow write: if isAdmin();
+    }
+
+    // Products
+    match /products/{productId} {
+      allow list, get: if true;
+      allow write: if isAdmin();
+    }
+
+    // Categories
+    match /categories/{categoryId} {
+      allow list, get: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+  }
+}
